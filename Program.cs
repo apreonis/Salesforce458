@@ -5,8 +5,6 @@ using InventoryManagement.Hubs;
 using InventoryManagement.Services;
 using Microsoft.AspNetCore.Authentication.Facebook;
 using Microsoft.AspNetCore.Authentication.Google;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Localization;
@@ -44,13 +42,13 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
 .AddRoles<IdentityRole>()
 .AddEntityFrameworkStores<ApplicationDbContext>();
 
-var authenticationBuilder = builder.Services.AddAuthentication();
+var authBuilder = builder.Services.AddAuthentication();
 
 var googleClientId = builder.Configuration["Authentication:Google:ClientId"];
 var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
 if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(googleClientSecret))
 {
-    authenticationBuilder.AddGoogle(options =>
+    authBuilder.AddGoogle(options =>
     {
         options.ClientId = googleClientId;
         options.ClientSecret = googleClientSecret;
@@ -61,7 +59,7 @@ var facebookAppId = builder.Configuration["Authentication:Facebook:AppId"];
 var facebookAppSecret = builder.Configuration["Authentication:Facebook:AppSecret"];
 if (!string.IsNullOrWhiteSpace(facebookAppId) && !string.IsNullOrWhiteSpace(facebookAppSecret))
 {
-    authenticationBuilder.AddFacebook(options =>
+    authBuilder.AddFacebook(options =>
     {
         options.AppId = facebookAppId;
         options.AppSecret = facebookAppSecret;
@@ -91,11 +89,17 @@ builder.Services.AddScoped<IImageUploadService, LocalImageUploadService>();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+try
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await db.Database.MigrateAsync();
     await AdminSeeder.SeedAsync(scope.ServiceProvider);
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine(ex);
+    throw;
 }
 
 var localizationOptions = new RequestLocalizationOptions()
@@ -132,7 +136,7 @@ app.Run();
 static string ResolveConnectionString(IConfiguration configuration, IWebHostEnvironment environment)
 {
     var configured = configuration.GetConnectionString("DefaultConnection");
-    if (!string.IsNullOrWhiteSpace(configured))
+    if (!string.IsNullOrWhiteSpace(configured) && !configured.Contains("localhost", StringComparison.OrdinalIgnoreCase))
     {
         return configured;
     }
@@ -194,6 +198,7 @@ static string ConvertDatabaseUrl(string databaseUrl)
     }
 
     var userInfo = uri.UserInfo.Split(':', 2);
+
     var builder = new NpgsqlConnectionStringBuilder
     {
         Host = uri.Host,
