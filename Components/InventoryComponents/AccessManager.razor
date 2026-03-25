@@ -1,0 +1,108 @@
+﻿@inject IInventoryService InventoryService
+@inject UserManager<ApplicationUser> UserManager
+@inject IStringLocalizer<SharedResource> Loc
+
+<div class="access-manager">
+    <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" checked="@isPublic" @onchange="OnIsPublicChanged" id="isPublic" />
+        <label class="form-check-label" for="isPublic">@Loc["Public (any authenticated user can add items)"]</label>
+    </div>
+
+    @if (!isPublic)
+    {
+        <h5>@Loc["Grant write access to specific users"]</h5>
+
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" @bind="searchTerm" @bind:event="oninput" placeholder="@Loc["Search by name or email"]" />
+            <button class="btn btn-outline-secondary" @onclick="SearchUsers">@Loc["Search"]</button>
+        </div>
+
+        @if (searchResults.Any())
+        {
+            <ul class="list-group mb-3">
+                @foreach (var user in searchResults)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        @(user.DisplayName ?? user.Email)
+                        <button class="btn btn-sm btn-primary" @onclick="() => AddAccess(user)">@Loc["Add"]</button>
+                    </li>
+                }
+            </ul>
+        }
+
+        <h5>@Loc["Users with access"]</h5>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>@Loc["Name"]</th>
+                    <th>@Loc["Email"]</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var access in (AccessList ?? Array.Empty<InventoryAccess>()).OrderBy(a => a.User?.DisplayName ?? a.User?.Email))
+                {
+                    <tr>
+                        <td>@(access.User?.DisplayName ?? access.User?.Email)</td>
+                        <td>@access.User?.Email</td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" @onclick="() => RemoveAccess(access)">@Loc["Remove"]</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid InventoryId { get; set; }
+    [Parameter] public bool IsPublic { get; set; }
+    [Parameter] public ICollection<InventoryAccess>? AccessList { get; set; }
+    [Parameter] public EventCallback OnChange { get; set; }
+
+    private bool isPublic;
+    private string searchTerm = string.Empty;
+    private List<ApplicationUser> searchResults = new();
+
+    protected override void OnParametersSet()
+    {
+        isPublic = IsPublic;
+    }
+
+    private async Task SearchUsers()
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            searchResults.Clear();
+            return;
+        }
+
+        var term = searchTerm.Trim();
+
+        searchResults = await UserManager.Users
+            .Where(u => (u.DisplayName != null && EF.Functions.ILike(u.DisplayName, $"%{term}%")) || (u.Email != null && EF.Functions.ILike(u.Email, $"%{term}%")))
+            .OrderBy(u => u.DisplayName ?? u.Email)
+            .Take(10)
+            .ToListAsync();
+    }
+
+    private async Task AddAccess(ApplicationUser user)
+    {
+        await InventoryService.GrantWriteAccessAsync(InventoryId, user.Id);
+        await OnChange.InvokeAsync();
+    }
+
+    private async Task RemoveAccess(InventoryAccess access)
+    {
+        await InventoryService.RevokeWriteAccessAsync(InventoryId, access.UserId);
+        await OnChange.InvokeAsync();
+    }
+
+    private async Task OnIsPublicChanged(ChangeEventArgs e)
+    {
+        isPublic = bool.TryParse(e.Value?.ToString(), out var value) && value;
+        await InventoryService.SetPublicAsync(InventoryId, isPublic);
+        await OnChange.InvokeAsync();
+    }
+}

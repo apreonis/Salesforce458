@@ -1,0 +1,49 @@
+﻿<CascadingValue Value="this">
+    <div class="tab-control">
+        @ChildContent
+
+        @if (pages.Count > 0)
+        {
+            <ul class="nav nav-tabs mt-3">
+                @for (var i = 0; i < pages.Count; i++)
+                {
+                    var index = i;
+                    <li class="nav-item">
+                        <button type="button" class="nav-link @(index == activeIndex ? "active" : "")" @onclick="() => SetActive(index)">
+                            @pages[index].Title
+                        </button>
+                    </li>
+                }
+            </ul>
+
+            <div class="tab-content p-3 border border-top-0">
+                @pages[activeIndex].ChildContent
+            </div>
+        }
+    </div>
+</CascadingValue>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private readonly List<TabPage> pages = new();
+    private int activeIndex;
+
+    internal void RegisterPage(TabPage page)
+    {
+        if (!pages.Contains(page))
+        {
+            pages.Add(page);
+            if (pages.Count == 1)
+            {
+                activeIndex = 0;
+            }
+            StateHasChanged();
+        }
+    }
+
+    private void SetActive(int index)
+    {
+        activeIndex = index;
+    }
+}

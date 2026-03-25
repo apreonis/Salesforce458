@@ -1,0 +1,229 @@
+﻿@page "/profile"
+@using System.Security.Claims
+@using InventoryManagement.Data.Models
+@inject IInventoryService InventoryService
+@inject AuthenticationStateProvider AuthState
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ISalesforceService SalesforceService
+@inject IStringLocalizer<SharedResource> Loc
+@inject Blazored.Toast.Services.IToastService ToastService
+
+<AuthorizeView>
+    <Authorized Context="auth">
+        @if (user != null)
+        {
+            <h3>@Loc["My Profile"] - @(user.DisplayName ?? user.Email)</h3>
+
+            <div class="mb-4">
+                <button type="button" class="btn btn-outline-primary" @onclick="ToggleSalesforceForm">
+                    @Loc["Send to Salesforce"]
+                </button>
+            </div>
+
+            @if (showSalesforceForm)
+            {
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h4 class="card-title">@Loc["Send profile to Salesforce"]</h4>
+
+                        <EditForm Model="@salesforceModel" OnValidSubmit="SendToSalesforce">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary />
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@Loc["Account Name"]</label>
+                                    <InputText class="form-control" @bind-Value="salesforceModel.AccountName" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@Loc["Account Phone"]</label>
+                                    <InputText class="form-control" @bind-Value="salesforceModel.AccountPhone" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@Loc["Account Website"]</label>
+                                    <InputText class="form-control" @bind-Value="salesforceModel.AccountWebsite" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@Loc["Contact Title"]</label>
+                                    <InputText class="form-control" @bind-Value="salesforceModel.ContactTitle" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@Loc["First Name"]</label>
+                                    <InputText class="form-control" @bind-Value="salesforceModel.ContactFirstName" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@Loc["Last Name"]</label>
+                                    <InputText class="form-control" @bind-Value="salesforceModel.ContactLastName" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@Loc["Email"]</label>
+                                    <InputText class="form-control" @bind-Value="salesforceModel.ContactEmail" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@Loc["Phone"]</label>
+                                    <InputText class="form-control" @bind-Value="salesforceModel.ContactPhone" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@Loc["City"]</label>
+                                    <InputText class="form-control" @bind-Value="salesforceModel.MailingCity" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">@Loc["Country"]</label>
+                                    <InputText class="form-control" @bind-Value="salesforceModel.MailingCountry" />
+                                </div>
+                                <div class="col-12 mb-3">
+                                    <label class="form-label">@Loc["Description"]</label>
+                                    <InputTextArea class="form-control" rows="4" @bind-Value="salesforceModel.Description" />
+                                </div>
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary" disabled="@isSendingToSalesforce">
+                                    @(isSendingToSalesforce? Loc["Sending"] : Loc["Send"])
+                                </button>
+                                <button type="button" class="btn btn-secondary" @onclick="HideSalesforceForm">
+                                    @Loc["Cancel"]
+                                </button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            }
+
+            <h4>@Loc["My Inventories"]</h4>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>@Loc["Title"]</th>
+                        <th>@Loc["Created"]</th>
+                        <th>@Loc["Items Count"]</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var inv in ownedInventories)
+                    {
+                        <tr>
+                            <td><a href="/inventory/@inv.Id">@inv.Title</a></td>
+                            <td>@inv.CreatedAt.ToLocalTime()</td>
+                            <td>@inv.Items.Count</td>
+                            <td>
+                                <button type="button" @onclick="() => DeleteInventory(inv.Id)" class="btn btn-sm btn-danger">@Loc["Delete"]</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <h4>@Loc["Inventories I Can Write"]</h4>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>@Loc["Title"]</th>
+                        <th>@Loc["Owner"]</th>
+                        <th>@Loc["Created"]</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var inv in writableInventories)
+                    {
+                        <tr>
+                            <td><a href="/inventory/@inv.Id">@inv.Title</a></td>
+                            <td>@(inv.Owner?.DisplayName ?? inv.Owner?.Email ?? "")</td>
+                            <td>@inv.CreatedAt.ToLocalTime()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private ApplicationUser? user;
+    private List<Inventory> ownedInventories = new();
+    private List<Inventory> writableInventories = new();
+    private SalesforceProfileSyncModel salesforceModel = new();
+    private bool showSalesforceForm;
+    private bool isSendingToSalesforce;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            Navigation.NavigateTo("/Identity/Account/Login", true);
+            return;
+        }
+
+        user = await UserManager.FindByIdAsync(userId);
+        if (user == null)
+        {
+            Navigation.NavigateTo("/Identity/Account/Login", true);
+            return;
+        }
+
+        salesforceModel = SalesforceProfileSyncModel.FromUser(user);
+
+        ownedInventories = await InventoryService.GetUserInventoriesAsync(userId, false);
+        writableInventories = await InventoryService.GetUserInventoriesAsync(userId, true);
+        writableInventories = writableInventories.Where(i => i.OwnerId != userId).ToList();
+    }
+
+    private void ToggleSalesforceForm()
+    {
+        showSalesforceForm = !showSalesforceForm;
+        if (showSalesforceForm && user != null)
+        {
+            salesforceModel = SalesforceProfileSyncModel.FromUser(user);
+        }
+    }
+
+    private void HideSalesforceForm()
+    {
+        showSalesforceForm = false;
+    }
+
+    private async Task SendToSalesforce()
+    {
+        if (isSendingToSalesforce)
+        {
+            return;
+        }
+
+        isSendingToSalesforce = true;
+
+        try
+        {
+            var result = await SalesforceService.CreateAccountAndContactAsync(salesforceModel);
+            ToastService.ShowSuccess("Salesforce account and contact created");
+            showSalesforceForm = false;
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError(ex.Message);
+        }
+        finally
+        {
+            isSendingToSalesforce = false;
+        }
+    }
+
+    private async Task DeleteInventory(Guid id)
+    {
+        var confirm = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this inventory?");
+        if (!confirm)
+        {
+            return;
+        }
+
+        await InventoryService.DeleteInventoryAsync(id);
+        ownedInventories.RemoveAll(i => i.Id == id);
+        writableInventories.RemoveAll(i => i.Id == id);
+        ToastService.ShowSuccess("Inventory deleted");
+    }
+}

@@ -1,0 +1,150 @@
+﻿@inject IFieldDefinitionService FieldService
+@inject IStringLocalizer<SharedResource> Loc
+
+<div class="custom-fields-editor">
+    <h4>@Loc["Custom Fields"]</h4>
+
+    <div class="row g-2 mb-3 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label">@Loc["Name"]</label>
+            <input class="form-control" value="@newFieldName" @oninput="e => newFieldName = e.Value?.ToString() ?? string.Empty" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">@Loc["Description"]</label>
+            <input class="form-control" value="@newFieldDescription" @oninput="e => newFieldDescription = e.Value?.ToString() ?? string.Empty" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">@Loc["Type"]</label>
+            <InputSelect class="form-select" @bind-Value="newFieldType">
+                @foreach (var type in Enum.GetValues<CustomFieldType>())
+                {
+                    <option value="@type">@type</option>
+                }
+            </InputSelect>
+        </div>
+        <div class="col-md-2 form-check mt-4">
+            <input class="form-check-input" type="checkbox" checked="@newDisplayInTable" @onchange="e => newDisplayInTable = bool.TryParse(e.Value?.ToString(), out var v) && v" />
+            <label class="form-check-label">@Loc["Show in table"]</label>
+        </div>
+        <div class="col-md-1">
+            <button type="button" class="btn btn-primary w-100" @onclick="AddField">+</button>
+        </div>
+    </div>
+
+    <div class="list-group">
+        @foreach (var field in fields.OrderBy(f => f.DisplayOrder))
+        {
+            <div class="list-group-item mb-2">
+                <div class="row g-2 align-items-center">
+                    <div class="col-md-3">
+                        <input class="form-control" value="@field.Name" @oninput="e => field.Name = e.Value?.ToString() ?? string.Empty" />
+                    </div>
+                    <div class="col-md-4">
+                        <input class="form-control" value="@field.Description" @oninput="e => field.Description = e.Value?.ToString() ?? string.Empty" />
+                    </div>
+                    <div class="col-md-2">
+                        <InputSelect class="form-select" @bind-Value="field.FieldType" disabled>
+                            @foreach (var type in Enum.GetValues<CustomFieldType>())
+                            {
+                                <option value="@type">@type</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-1 form-check mt-2">
+                        <input class="form-check-input" type="checkbox" checked="@field.DisplayInTable" @onchange="e => field.DisplayInTable = bool.TryParse(e.Value?.ToString(), out var v) && v" />
+                    </div>
+                    <div class="col-md-2 text-end">
+                        <button type="button" class="btn btn-sm btn-outline-secondary me-1" @onclick="() => MoveField(field, -1)">↑</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary me-1" @onclick="() => MoveField(field, 1)">↓</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary me-1" @onclick="() => SaveField(field)">@Loc["Save"]</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeleteField(field)">✖</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid InventoryId { get; set; }
+    [Parameter] public ICollection<CustomFieldDefinition> Fields { get; set; } = new List<CustomFieldDefinition>();
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private List<CustomFieldDefinition> fields = new();
+    private string newFieldName = string.Empty;
+    private string newFieldDescription = string.Empty;
+    private CustomFieldType newFieldType = CustomFieldType.SingleLineText;
+    private bool newDisplayInTable = true;
+
+    protected override void OnParametersSet()
+    {
+        fields = Fields.OrderBy(f => f.DisplayOrder).Select(f => new CustomFieldDefinition
+        {
+            Id = f.Id,
+            InventoryId = f.InventoryId,
+            Name = f.Name,
+            Description = f.Description,
+            FieldType = f.FieldType,
+            FieldIndex = f.FieldIndex,
+            DisplayInTable = f.DisplayInTable,
+            DisplayOrder = f.DisplayOrder,
+            MinValue = f.MinValue,
+            MaxValue = f.MaxValue,
+            MaxLength = f.MaxLength,
+            RegexPattern = f.RegexPattern
+        }).ToList();
+    }
+
+    private async Task AddField()
+    {
+        if (string.IsNullOrWhiteSpace(newFieldName))
+        {
+            return;
+        }
+
+        var added = await FieldService.AddFieldAsync(InventoryId, newFieldName.Trim(), newFieldDescription.Trim(), newFieldType, newDisplayInTable);
+        fields.Add(added);
+        ClearNewField();
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task SaveField(CustomFieldDefinition field)
+    {
+        await FieldService.UpdateFieldAsync(field);
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task DeleteField(CustomFieldDefinition field)
+    {
+        await FieldService.DeleteFieldAsync(field.Id);
+        fields.RemoveAll(f => f.Id == field.Id);
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task MoveField(CustomFieldDefinition field, int offset)
+    {
+        var currentIndex = fields.FindIndex(f => f.Id == field.Id);
+        var newIndex = currentIndex + offset;
+
+        if (currentIndex < 0 || newIndex < 0 || newIndex >= fields.Count)
+        {
+            return;
+        }
+
+        var item = fields[currentIndex];
+        fields.RemoveAt(currentIndex);
+        fields.Insert(newIndex, item);
+
+        var orders = fields.Select((f, index) => new { f.Id, Index = index }).ToDictionary(x => x.Id, x => x.Index);
+        await FieldService.ReorderFieldsAsync(InventoryId, orders);
+        await OnChanged.InvokeAsync();
+    }
+
+    private void ClearNewField()
+    {
+        newFieldName = string.Empty;
+        newFieldDescription = string.Empty;
+        newFieldType = CustomFieldType.SingleLineText;
+        newDisplayInTable = true;
+    }
+}

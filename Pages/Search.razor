@@ -1,0 +1,45 @@
+﻿@page "/search"
+@inject ISearchService SearchService
+@inject IStringLocalizer<SharedResource> Loc
+
+<h3>@Loc["Search Results for"] "@query"</h3>
+
+@if (results != null && results.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>@Loc["Title"]</th>
+                <th>@Loc["Type"]</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var result in results)
+            {
+                <tr>
+                    <td><a href="@((result.Type == "Inventory" ? "/inventory/" : "/item/") + result.Id)">@result.Title</a></td>
+                    <td>@result.Type</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else if (!string.IsNullOrEmpty(query))
+{
+    <p>@Loc["No results found."]</p>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? q { get; set; }
+    private string query = string.Empty;
+    private List<SearchResult> results = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        query = q ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            results = await SearchService.SearchAsync(query);
+        }
+    }
+}

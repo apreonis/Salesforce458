@@ -1,0 +1,75 @@
+﻿@inject ITagService TagService
+@inject IStringLocalizer<SharedResource> Loc
+
+<div class="tag-selector position-relative">
+    <input type="text" class="form-control" value="@input" @oninput="HandleInput" placeholder="@Loc["Add tag..."]" />
+
+    @if (suggestions.Count > 0)
+    {
+        <div class="list-group position-absolute w-100 mt-1 suggestion-dropdown">
+            @foreach (var suggestion in suggestions)
+            {
+                <button type="button" class="list-group-item list-group-item-action" @onclick="() => AddTag(suggestion)">
+                    @suggestion
+                </button>
+            }
+        </div>
+    }
+
+    <div class="selected-tags mt-2 d-flex flex-wrap gap-1">
+        @foreach (var tag in Tags ?? Array.Empty<Tag>())
+        {
+            <span class="badge bg-primary d-inline-flex align-items-center">
+                @tag.Name
+                <button type="button" class="btn-close btn-close-white btn-sm ms-2" @onclick="() => RemoveTag(tag)"></button>
+            </span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public ICollection<Tag>? Tags { get; set; }
+    [Parameter] public EventCallback<ICollection<Tag>> TagsChanged { get; set; }
+
+    private string input = string.Empty;
+    private List<string> suggestions = new();
+
+    private async Task HandleInput(ChangeEventArgs e)
+    {
+        input = e.Value?.ToString() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            suggestions.Clear();
+            return;
+        }
+
+        suggestions = await TagService.SearchTagsAsync(input);
+    }
+
+    private async Task AddTag(string tagName)
+    {
+        if (Tags == null)
+            return;
+
+        if (!Tags.Any(t => string.Equals(t.Name, tagName, StringComparison.OrdinalIgnoreCase)))
+        {
+            var tag = await TagService.GetOrCreateTagAsync(tagName);
+            var newTags = Tags.ToList();
+            newTags.Add(tag);
+            await TagsChanged.InvokeAsync(newTags);
+        }
+
+        input = string.Empty;
+        suggestions.Clear();
+    }
+
+    private async Task RemoveTag(Tag tag)
+    {
+        if (Tags == null)
+            return;
+
+        var newTags = Tags.Where(t => t.Id != tag.Id).ToList();
+        await TagsChanged.InvokeAsync(newTags);
+    }
+}

@@ -1,0 +1,54 @@
+﻿@inject IImageUploadService UploadService
+@inject IStringLocalizer<SharedResource> Loc
+@inject Blazored.Toast.Services.IToastService ToastService
+
+<div class="image-upload">
+    @if (!string.IsNullOrEmpty(Value))
+    {
+        <div class="current-image mb-2">
+            <img src="@Value" style="max-width: 200px; max-height: 200px;" />
+            <button class="btn btn-sm btn-danger ms-2" @onclick="RemoveImage">@Loc["Remove"]</button>
+        </div>
+    }
+
+    <InputFile OnChange="OnFileSelected" accept="image/*" />
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public EventCallback<string?> OnFileRemoved { get; set; }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        try
+        {
+            var old = Value;
+            var url = await UploadService.UploadAsync(file);
+            await ValueChanged.InvokeAsync(url);
+            if (!string.IsNullOrWhiteSpace(old))
+            {
+                await OnFileRemoved.InvokeAsync(old);
+            }
+        }
+        catch (Exception ex)
+        {
+            var msg = Loc["UploadFailed"].Value;
+            if (string.IsNullOrWhiteSpace(msg)) msg = "Image upload failed";
+            ToastService.ShowError($"{msg}: {ex.Message}");
+        }
+    }
+
+    private async Task RemoveImage()
+    {
+        var old = Value;
+        await ValueChanged.InvokeAsync(null);
+        if (!string.IsNullOrWhiteSpace(old))
+        {
+            await OnFileRemoved.InvokeAsync(old);
+        }
+    }
+}

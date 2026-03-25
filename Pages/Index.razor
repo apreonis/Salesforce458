@@ -1,0 +1,84 @@
+﻿@page "/"
+@inject ApplicationDbContext Db
+@inject IStringLocalizer<SharedResource> Loc
+
+<h3>@Loc["Latest Inventories"]</h3>
+<table class="table table-hover">
+    <thead>
+        <tr>
+            <th>@Loc["Title"]</th>
+            <th>@Loc["Description"]</th>
+            <th>@Loc["Owner"]</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var inv in latest)
+        {
+            <tr>
+                <td><a href="/inventory/@inv.Id">@inv.Title</a></td>
+                <td>@inv.Description</td>
+                <td>@(inv.Owner?.DisplayName ?? inv.Owner?.Email ?? "")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h3>@Loc["Top 5 Inventories"]</h3>
+<table class="table table-hover">
+    <thead>
+        <tr>
+            <th>@Loc["Title"]</th>
+            <th>@Loc["Items Count"]</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var inv in top)
+        {
+            <tr>
+                <td><a href="/inventory/@inv.Id">@inv.Title</a></td>
+                <td>@inv.Items.Count</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h3>@Loc["Tag Cloud"]</h3>
+<div class="tag-cloud">
+    @foreach (var tag in tags)
+    {
+        var size = 12 + tag.Count * 2;
+        <a href="/search?q=@tag.Name" style="font-size: @(size)px; margin:5px; display:inline-block;">@tag.Name</a>
+    }
+</div>
+
+@code {
+    private List<Inventory> latest = new();
+    private List<Inventory> top = new();
+    private List<TagInfo> tags = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        latest = await Db.Inventories
+            .Include(i => i.Owner)
+            .OrderByDescending(i => i.CreatedAt)
+            .Take(10)
+            .ToListAsync();
+
+        top = await Db.Inventories
+            .Include(i => i.Items)
+            .OrderByDescending(i => i.Items.Count)
+            .Take(5)
+            .ToListAsync();
+
+        tags = await Db.Tags
+            .Select(t => new TagInfo { Name = t.Name, Count = t.Inventories.Count })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+    }
+
+    private class TagInfo
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Count { get; set; }
+    }
+}

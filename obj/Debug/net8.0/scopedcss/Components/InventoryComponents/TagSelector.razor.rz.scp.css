@@ -1,0 +1,9 @@
+.tag-selector[b-frw0kjz2qd] {
+    position: relative;
+}
+
+.suggestion-dropdown[b-frw0kjz2qd] {
+    z-index: 20;
+    max-height: 240px;
+    overflow-y: auto;
+}

@@ -1,0 +1,141 @@
+﻿@page "/item/{Id:guid}"
+
+@using InventoryManagement.Data.Models
+
+@inject IItemService ItemService
+@inject IFieldDefinitionService FieldService
+@inject AuthenticationStateProvider AuthState
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject IStringLocalizer<SharedResource> Loc
+@inject Blazored.Toast.Services.IToastService ToastService
+
+@if (item != null)
+{
+    <h3>@Loc["Item"]: @item.CustomId</h3>
+    <p>@Loc["Created by"]: @(item.CreatedBy?.DisplayName ?? item.CreatedBy?.Email ?? "")</p>
+    <p>@Loc["Created at"]: @item.CreatedAt.ToLocalTime()</p>
+    <p>@Loc["Likes"]: @(item.Likes?.Count ?? 0)</p>
+    <button type="button" class="btn btn-primary me-2" @onclick="ToggleLike">@Loc["Like"]</button>
+
+    @if (canEdit)
+    {
+        <a href="/item/@item.Id/edit" class="btn btn-warning me-2">@Loc["Edit"]</a>
+        <button type="button" class="btn btn-danger" @onclick="DeleteItem">@Loc["Delete"]</button>
+    }
+
+    <h4 class="mt-4">@Loc["Fields"]</h4>
+    <table class="table">
+        <tbody>
+            @foreach (var field in fields)
+            {
+                <tr>
+                    <th>@field.Name</th>
+                    <td>@GetFieldValue(item, field)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private Item? item;
+    private List<CustomFieldDefinition> fields = new();
+    private bool canEdit;
+
+    protected override async Task OnInitializedAsync()
+    {
+        item = await ItemService.GetItemAsync(Id);
+        if (item == null)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        fields = await FieldService.GetFieldsForInventoryAsync(item.InventoryId);
+
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var currentUser = await UserManager.GetUserAsync(authState.User);
+        var userId = currentUser?.Id;
+
+        canEdit = userId != null && await ItemService.UserCanModifyItemAsync(Id, userId);
+    }
+
+    private async Task ToggleLike()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var currentUser = await UserManager.GetUserAsync(authState.User);
+        var userId = currentUser?.Id;
+
+        if (userId != null)
+        {
+            await ItemService.ToggleLikeAsync(Id, userId);
+            item = await ItemService.GetItemAsync(Id);
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeleteItem()
+    {
+        if (item == null)
+        {
+            return;
+        }
+
+        var confirm = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this item?");
+        if (!confirm)
+        {
+            return;
+        }
+
+        await ItemService.DeleteItemAsync(item.Id);
+        ToastService.ShowSuccess("Item deleted");
+        Navigation.NavigateTo($"/inventory/{item.InventoryId}");
+    }
+
+    private object? GetFieldValue(Item item, CustomFieldDefinition field)
+    {
+        return field.FieldType switch
+        {
+            CustomFieldType.SingleLineText => field.FieldIndex switch
+            {
+                1 => item.Text1,
+                2 => item.Text2,
+                3 => item.Text3,
+                _ => null
+            },
+            CustomFieldType.MultiLineText => field.FieldIndex switch
+            {
+                1 => item.MultiText1,
+                2 => item.MultiText2,
+                3 => item.MultiText3,
+                _ => null
+            },
+            CustomFieldType.Number => field.FieldIndex switch
+            {
+                1 => item.Number1,
+                2 => item.Number2,
+                3 => item.Number3,
+                _ => null
+            },
+            CustomFieldType.Boolean => field.FieldIndex switch
+            {
+                1 => item.Boolean1,
+                2 => item.Boolean2,
+                3 => item.Boolean3,
+                _ => null
+            },
+            CustomFieldType.Document => field.FieldIndex switch
+            {
+                1 => item.Document1,
+                2 => item.Document2,
+                3 => item.Document3,
+                _ => null
+            },
+            _ => null
+        };
+    }
+}

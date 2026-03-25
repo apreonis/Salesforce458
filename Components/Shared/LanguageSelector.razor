@@ -1,0 +1,21 @@
+﻿@using System.Globalization
+@inject NavigationManager Navigation
+
+<select class="form-select form-select-sm language-select" value="@CurrentCulture" @onchange="OnLanguageChanged">
+    <option value="en">English</option>
+    <option value="ru">Русский</option>
+</select>
+
+@code {
+    private string CurrentCulture => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ru" ? "ru" : "en";
+
+    private void OnLanguageChanged(ChangeEventArgs e)
+    {
+        var culture = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(culture))
+            return;
+
+        var returnUrl = new Uri(Navigation.Uri).PathAndQuery;
+        Navigation.NavigateTo($"/culture/set?culture={culture}&redirectUri={Uri.EscapeDataString(returnUrl)}", forceLoad: true);
+    }
+}

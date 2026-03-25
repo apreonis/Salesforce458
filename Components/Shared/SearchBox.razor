@@ -1,0 +1,19 @@
+﻿@inject NavigationManager Navigation
+@inject IStringLocalizer<SharedResource> Loc
+
+<div class="input-group input-group-sm search-box">
+    <input type="text" class="form-control search-input" @bind="query" @bind:event="oninput" placeholder="@Loc["Search..."]" />
+    <button type="button" class="btn btn-primary search-go" @onclick="Search">Go</button>
+</div>
+
+@code {
+    private string query = string.Empty;
+
+    private void Search()
+    {
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            Navigation.NavigateTo($"/search?q={Uri.EscapeDataString(query)}");
+        }
+    }
+}

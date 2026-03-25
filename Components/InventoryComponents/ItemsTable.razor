@@ -1,0 +1,47 @@
+﻿@inject IStringLocalizer<SharedResource> Loc
+
+<div class="items-table">
+    @if (CanEdit)
+    {
+        <div class="mb-3">
+            <a class="btn btn-primary" href="@($"/inventory/{Inventory.Id}/item/create")">@Loc["Create Item"]</a>
+        </div>
+    }
+
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>@Loc["Custom ID"]</th>
+                <th>@Loc["Created by"]</th>
+                <th>@Loc["Created at"]</th>
+                <th>@Loc["Likes"]</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Items == null || Items.Count == 0)
+            {
+                <tr>
+                    <td colspan="4">@Loc["No items yet."]</td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var item in Items.OrderByDescending(x => x.CreatedAt))
+                {
+                    <tr>
+                        <td><a href="@($"/item/{item.Id}")">@item.CustomId</a></td>
+                        <td>@(item.CreatedBy?.DisplayName ?? item.CreatedBy?.Email ?? "")</td>
+                        <td>@item.CreatedAt.ToLocalTime()</td>
+                        <td>@(item.Likes?.Count ?? 0)</td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public Inventory Inventory { get; set; } = default!;
+    [Parameter] public List<Item> Items { get; set; } = new();
+    [Parameter] public bool CanEdit { get; set; }
+}

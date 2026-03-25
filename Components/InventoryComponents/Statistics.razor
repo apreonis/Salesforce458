@@ -1,0 +1,27 @@
+﻿@inject IStatisticsService StatisticsService
+@inject IStringLocalizer<SharedResource> Loc
+
+@if (stats != null)
+{
+    <div class="statistics">
+        <h3>@Loc["Inventory Statistics"]</h3>
+        <p>@Loc["Total Items"]: @stats.TotalItems</p>
+        @if (stats.FieldStats != null)
+        {
+            foreach (var stat in stats.FieldStats)
+            {
+                <p>@stat.Key: @stat.Value</p>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public Guid InventoryId { get; set; }
+    private InventoryStatistics stats;
+
+    protected override async Task OnInitializedAsync()
+    {
+        stats = await StatisticsService.GetStatisticsAsync(InventoryId);
+    }
+}

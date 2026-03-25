@@ -1,0 +1,9 @@
+.tag-selector {
+    position: relative;
+}
+
+.suggestion-dropdown {
+    z-index: 20;
+    max-height: 240px;
+    overflow-y: auto;
+}

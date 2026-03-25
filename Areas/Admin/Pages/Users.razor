@@ -1,0 +1,155 @@
+﻿@page "/admin/users"
+@attribute [Authorize(Roles = "Admin")]
+
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<IdentityRole> RoleManager
+@inject AuthenticationStateProvider AuthState
+@inject SignInManager<ApplicationUser> SignInManager
+@inject NavigationManager Navigation
+@inject IStringLocalizer<SharedResource> Loc
+@inject Blazored.Toast.Services.IToastService ToastService
+
+<h3>@Loc["User Management"]</h3>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>@Loc["Email"]</th>
+            <th>@Loc["Display Name"]</th>
+            <th>@Loc["Registered"]</th>
+            <th>@Loc["Blocked"]</th>
+            <th>@Loc["Roles"]</th>
+            <th>@Loc["Actions"]</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var user in users)
+        {
+            <tr>
+                <td>@user.Email</td>
+                <td>@user.DisplayName</td>
+                <td>@user.RegisteredAt.ToLocalTime()</td>
+                <td>@(user.IsBlocked? Loc["Yes"] : Loc["No"])</td>
+                <td>@string.Join(", ", userRoles.TryGetValue(user.Id, out var roles) ? roles : Array.Empty<string>())</td>
+                <td>
+                    <button type="button" @onclick="() => ToggleBlock(user)" class="btn btn-warning btn-sm me-1">
+                        @(user.IsBlocked? Loc["Unblock"] : Loc["Block"])
+                    </button>
+                    <button type="button" @onclick="() => DeleteUser(user)" class="btn btn-danger btn-sm me-1">@Loc["Delete"]</button>
+                    <button type="button" @onclick="() => ToggleAdmin(user)" class="btn btn-info btn-sm">
+                        @((userIsAdmin.TryGetValue(user.Id, out var isAdmin) && isAdmin) ? Loc["Remove Admin"] : Loc["Make Admin"])
+                    </button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private const string AdminRole = "Admin";
+
+    private List<ApplicationUser> users = new();
+    private Dictionary<string, IList<string>> userRoles = new();
+    private Dictionary<string, bool> userIsAdmin = new();
+    private string? currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await RoleManager.RoleExistsAsync(AdminRole))
+        {
+            await RoleManager.CreateAsync(new IdentityRole(AdminRole));
+        }
+
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        currentUserId = (await UserManager.GetUserAsync(authState.User))?.Id;
+
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        users = await UserManager.Users.OrderBy(u => u.Email).ToListAsync();
+        userRoles.Clear();
+        userIsAdmin.Clear();
+
+        foreach (var user in users)
+        {
+            var roles = await UserManager.GetRolesAsync(user);
+            userRoles[user.Id] = roles;
+            userIsAdmin[user.Id] = roles.Contains(AdminRole);
+        }
+    }
+
+    private async Task ToggleBlock(ApplicationUser user)
+    {
+        user.IsBlocked = !user.IsBlocked;
+        await UserManager.UpdateAsync(user);
+        await UserManager.UpdateSecurityStampAsync(user);
+
+        if (user.Id == currentUserId)
+        {
+            if (user.IsBlocked)
+            {
+                await SignInManager.SignOutAsync();
+                Navigation.NavigateTo("/Identity/Account/Login", true);
+                return;
+            }
+
+            await SignInManager.RefreshSignInAsync(user);
+        }
+
+        await LoadUsers();
+        ToastService.ShowSuccess(user.IsBlocked ? "User blocked" : "User unblocked");
+    }
+
+    private async Task DeleteUser(ApplicationUser user)
+    {
+        var result = await UserManager.DeleteAsync(user);
+        if (result.Succeeded)
+        {
+            users.Remove(user);
+            userRoles.Remove(user.Id);
+            userIsAdmin.Remove(user.Id);
+
+            if (user.Id == currentUserId)
+            {
+                await SignInManager.SignOutAsync();
+                Navigation.NavigateTo("/Identity/Account/Login", true);
+                return;
+            }
+
+            ToastService.ShowSuccess("User deleted");
+        }
+        else
+        {
+            ToastService.ShowError(string.Join("; ", result.Errors.Select(x => x.Description)));
+        }
+    }
+
+    private async Task ToggleAdmin(ApplicationUser user)
+    {
+        if (userIsAdmin.TryGetValue(user.Id, out var isAdmin) && isAdmin)
+        {
+            await UserManager.RemoveFromRoleAsync(user, AdminRole);
+            userIsAdmin[user.Id] = false;
+            userRoles[user.Id] = userRoles[user.Id].Where(r => r != AdminRole).ToList();
+            ToastService.ShowSuccess("Admin role removed");
+        }
+        else
+        {
+            await UserManager.AddToRoleAsync(user, AdminRole);
+            userIsAdmin[user.Id] = true;
+            userRoles[user.Id] = userRoles[user.Id].Append(AdminRole).ToList();
+            ToastService.ShowSuccess("Admin role granted");
+        }
+
+        await UserManager.UpdateSecurityStampAsync(user);
+
+        if (user.Id == currentUserId)
+        {
+            await SignInManager.RefreshSignInAsync(user);
+        }
+
+        await LoadUsers();
+    }
+}

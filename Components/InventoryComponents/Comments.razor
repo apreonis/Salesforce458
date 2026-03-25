@@ -1,0 +1,71 @@
+﻿@using Microsoft.AspNetCore.SignalR.Client
+@inject ICommentService CommentService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthState
+@inject IStringLocalizer<SharedResource> Loc
+@implements IAsyncDisposable
+
+<div class="comments">
+    <div class="comment-list mb-3">
+        @foreach (var comment in comments)
+        {
+            <div class="comment card mb-2">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">
+                        <a href="/user/@comment.UserId">@comment.User.DisplayName</a>
+                        <small>@comment.CreatedAt.ToLocalTime()</small>
+                    </h6>
+                    <Markdown Content="@comment.Content" />
+                </div>
+            </div>
+        }
+    </div>
+    @if (isAuthenticated)
+    {
+        <div class="comment-input">
+            <textarea class="form-control" @bind="newComment" placeholder="@Loc["Add comment..."]"></textarea>
+            <button class="btn btn-primary mt-2" @onclick="SendComment">@Loc["Send"]</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid InventoryId { get; set; }
+    private List<Comment> comments = new();
+    private string newComment = string.Empty;
+    private bool isAuthenticated;
+    private HubConnection? hubConnection;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        isAuthenticated = authState.User.Identity?.IsAuthenticated == true;
+        comments = await CommentService.GetCommentsAsync(InventoryId);
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/commentHub") + $"?inventoryId={InventoryId}")
+            .Build();
+        hubConnection.On<Comment>("ReceiveComment", (comment) =>
+        {
+            comments.Add(comment);
+            StateHasChanged();
+        });
+        await hubConnection.StartAsync();
+    }
+
+    private async Task SendComment()
+    {
+        if (!string.IsNullOrWhiteSpace(newComment) && hubConnection?.State == HubConnectionState.Connected)
+        {
+            await hubConnection.SendAsync("SendComment", InventoryId, newComment);
+            newComment = "";
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection != null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

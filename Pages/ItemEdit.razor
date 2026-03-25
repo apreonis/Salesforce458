@@ -1,0 +1,370 @@
+﻿@page "/inventory/{InventoryId:guid}/item/create"
+@page "/item/{Id:guid}/edit"
+@attribute [Authorize]
+@using System.Security.Claims
+@using InventoryManagement.Data.Models
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+
+@inject IItemService ItemService
+@inject IInventoryService InventoryService
+@inject IFieldDefinitionService FieldService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthState
+@inject UserManager<ApplicationUser> UserManager
+@inject IStringLocalizer<SharedResource> Loc
+@inject Blazored.Toast.Services.IToastService ToastService
+
+<EditForm Model="@formModel" OnValidSubmit="SaveItem">
+    <h3>@(Id == Guid.Empty ? Loc["Create Item"] : Loc["Edit Item"])</h3>
+
+    <div class="mb-3">
+        <label class="form-label">@Loc["Custom ID"]</label>
+        <InputText class="form-control" @bind-Value="formModel.CustomId" />
+        <small class="text-muted">@Loc["Must be unique within this inventory"]</small>
+    </div>
+
+    @foreach (var field in fields)
+    {
+        <div class="mb-3">
+            <label class="form-label" title="@field.Description">@field.Name</label>
+            @switch (field.FieldType)
+            {
+                case CustomFieldType.SingleLineText:
+                    <input type="text" class="form-control" value="@GetTextValue(field.FieldIndex)" @onchange="e => SetTextValue(field.FieldIndex, e.Value?.ToString() ?? string.Empty)" />
+                    break;
+                case CustomFieldType.MultiLineText:
+                    <textarea class="form-control" @onchange="e => SetMultiTextValue(field.FieldIndex, e.Value?.ToString() ?? string.Empty)">@GetMultiTextValue(field.FieldIndex)</textarea>
+                    break;
+                case CustomFieldType.Number:
+                    <input type="number" class="form-control" value="@GetNumberValue(field.FieldIndex)" @onchange="e => SetNumberValue(field.FieldIndex, decimal.TryParse(e.Value?.ToString(), out var num) ? num : null)" />
+                    break;
+                case CustomFieldType.Boolean:
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" checked="@GetBooleanValue(field.FieldIndex)" @onchange="e => SetBooleanValue(field.FieldIndex, e.Value != null && bool.TryParse(e.Value.ToString(), out var v) && v)" />
+                    </div>
+                    break;
+                case CustomFieldType.Document:
+                    <input type="text" class="form-control" placeholder="@Loc["URL to document"]" value="@GetDocumentValue(field.FieldIndex)" @onchange="e => SetDocumentValue(field.FieldIndex, e.Value?.ToString() ?? string.Empty)" />
+                    break;
+            }
+        </div>
+    }
+
+    <button type="submit" class="btn btn-primary" disabled="@isSaving">@Loc["Save"]</button>
+    <a href="/inventory/@(item.InventoryId)" class="btn btn-secondary">@Loc["Cancel"]</a>
+</EditForm>
+
+@code {
+    [Parameter] public Guid InventoryId { get; set; }
+    [Parameter] public Guid Id { get; set; }
+
+    private Item item = new();
+    private List<CustomFieldDefinition> fields = new();
+    private ItemFormModel formModel = new();
+    private string? currentUserId;
+    private bool isSaving;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var currentUser = await UserManager.GetUserAsync(authState.User);
+        currentUserId = currentUser?.Id
+            ?? authState.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? authState.User.FindFirstValue("sub");
+
+        if (string.IsNullOrWhiteSpace(currentUserId))
+        {
+            Navigation.NavigateTo("/Identity/Account/Login", true);
+            return;
+        }
+
+        if (Id != Guid.Empty)
+        {
+            item = await ItemService.GetItemAsync(Id);
+            if (item == null)
+            {
+                Navigation.NavigateTo("/");
+                return;
+            }
+
+            InventoryId = item.InventoryId;
+
+            if (!await ItemService.UserCanModifyItemAsync(Id, currentUserId))
+            {
+                Navigation.NavigateTo("/");
+                return;
+            }
+        }
+        else
+        {
+            if (!await InventoryService.UserCanWriteAsync(InventoryId, currentUserId))
+            {
+                Navigation.NavigateTo("/");
+                return;
+            }
+
+            var inventory = await InventoryService.GetInventoryAsync(InventoryId);
+            if (inventory == null)
+            {
+                Navigation.NavigateTo("/");
+                return;
+            }
+
+            item = new Item
+            {
+                InventoryId = InventoryId
+            };
+        }
+
+        fields = await FieldService.GetFieldsForInventoryAsync(InventoryId);
+        formModel = new ItemFormModel();
+        formModel.CustomId = item.CustomId;
+        formModel.LoadFromItem(item);
+    }
+
+    private string GetTextValue(int index) => index switch
+    {
+        1 => formModel.Text1,
+        2 => formModel.Text2,
+        3 => formModel.Text3,
+        _ => string.Empty
+    };
+
+    private void SetTextValue(int index, string value)
+    {
+        switch (index)
+        {
+            case 1:
+                formModel.Text1 = value;
+                break;
+            case 2:
+                formModel.Text2 = value;
+                break;
+            case 3:
+                formModel.Text3 = value;
+                break;
+        }
+    }
+
+    private string GetMultiTextValue(int index) => index switch
+    {
+        1 => formModel.MultiText1,
+        2 => formModel.MultiText2,
+        3 => formModel.MultiText3,
+        _ => string.Empty
+    };
+
+    private void SetMultiTextValue(int index, string value)
+    {
+        switch (index)
+        {
+            case 1:
+                formModel.MultiText1 = value;
+                break;
+            case 2:
+                formModel.MultiText2 = value;
+                break;
+            case 3:
+                formModel.MultiText3 = value;
+                break;
+        }
+    }
+
+    private decimal? GetNumberValue(int index) => index switch
+    {
+        1 => formModel.Number1,
+        2 => formModel.Number2,
+        3 => formModel.Number3,
+        _ => null
+    };
+
+    private void SetNumberValue(int index, decimal? value)
+    {
+        switch (index)
+        {
+            case 1:
+                formModel.Number1 = value;
+                break;
+            case 2:
+                formModel.Number2 = value;
+                break;
+            case 3:
+                formModel.Number3 = value;
+                break;
+        }
+    }
+
+    private bool GetBooleanValue(int index) => index switch
+    {
+        1 => formModel.Boolean1,
+        2 => formModel.Boolean2,
+        3 => formModel.Boolean3,
+        _ => false
+    };
+
+    private void SetBooleanValue(int index, bool value)
+    {
+        switch (index)
+        {
+            case 1:
+                formModel.Boolean1 = value;
+                break;
+            case 2:
+                formModel.Boolean2 = value;
+                break;
+            case 3:
+                formModel.Boolean3 = value;
+                break;
+        }
+    }
+
+    private string GetDocumentValue(int index) => index switch
+    {
+        1 => formModel.Document1,
+        2 => formModel.Document2,
+        3 => formModel.Document3,
+        _ => string.Empty
+    };
+
+    private void SetDocumentValue(int index, string value)
+    {
+        switch (index)
+        {
+            case 1:
+                formModel.Document1 = value;
+                break;
+            case 2:
+                formModel.Document2 = value;
+                break;
+            case 3:
+                formModel.Document3 = value;
+                break;
+        }
+    }
+
+    private async Task SaveItem()
+    {
+        if (isSaving)
+        {
+            return;
+        }
+
+        isSaving = true;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(currentUserId))
+            {
+                ToastService.ShowWarning("You must be logged in");
+                Navigation.NavigateTo("/Identity/Account/Login", true);
+                return;
+            }
+
+            item.InventoryId = InventoryId;
+            formModel.ApplyToItem(item);
+            item.CustomId = formModel.CustomId;
+
+            if (Id == Guid.Empty)
+            {
+                await ItemService.CreateItemAsync(item, currentUserId);
+                ToastService.ShowSuccess("Item created");
+            }
+            else
+            {
+                await ItemService.UpdateItemAsync(item, item.RowVersion);
+                ToastService.ShowSuccess("Item updated");
+            }
+
+            Navigation.NavigateTo($"/inventory/{item.InventoryId}");
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            ToastService.ShowWarning("Item was modified by another user. Reloading data.");
+            if (Id != Guid.Empty)
+            {
+                item = await ItemService.GetItemAsync(Id);
+                if (item != null)
+                {
+                    formModel.LoadFromItem(item);
+                }
+            }
+            StateHasChanged();
+        }
+        catch (DbUpdateException ex)
+        {
+            ToastService.ShowError(ex.InnerException?.Message ?? ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            ToastService.ShowError(ex.Message);
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private class ItemFormModel
+    {
+        public string CustomId { get; set; } = string.Empty;
+
+        public string Text1 { get; set; } = string.Empty;
+        public string Text2 { get; set; } = string.Empty;
+        public string Text3 { get; set; } = string.Empty;
+
+        public string MultiText1 { get; set; } = string.Empty;
+        public string MultiText2 { get; set; } = string.Empty;
+        public string MultiText3 { get; set; } = string.Empty;
+
+        public decimal? Number1 { get; set; }
+        public decimal? Number2 { get; set; }
+        public decimal? Number3 { get; set; }
+
+        public bool Boolean1 { get; set; }
+        public bool Boolean2 { get; set; }
+        public bool Boolean3 { get; set; }
+
+        public string Document1 { get; set; } = string.Empty;
+        public string Document2 { get; set; } = string.Empty;
+        public string Document3 { get; set; } = string.Empty;
+
+        public void LoadFromItem(Item item)
+        {
+            Text1 = item.Text1 ?? string.Empty;
+            Text2 = item.Text2 ?? string.Empty;
+            Text3 = item.Text3 ?? string.Empty;
+            MultiText1 = item.MultiText1 ?? string.Empty;
+            MultiText2 = item.MultiText2 ?? string.Empty;
+            MultiText3 = item.MultiText3 ?? string.Empty;
+            Number1 = item.Number1;
+            Number2 = item.Number2;
+            Number3 = item.Number3;
+            Boolean1 = item.Boolean1 ?? false;
+            Boolean2 = item.Boolean2 ?? false;
+            Boolean3 = item.Boolean3 ?? false;
+            Document1 = item.Document1 ?? string.Empty;
+            Document2 = item.Document2 ?? string.Empty;
+            Document3 = item.Document3 ?? string.Empty;
+        }
+
+        public void ApplyToItem(Item item)
+        {
+            item.Text1 = Text1;
+            item.Text2 = Text2;
+            item.Text3 = Text3;
+            item.MultiText1 = MultiText1;
+            item.MultiText2 = MultiText2;
+            item.MultiText3 = MultiText3;
+            item.Number1 = Number1;
+            item.Number2 = Number2;
+            item.Number3 = Number3;
+            item.Boolean1 = Boolean1;
+            item.Boolean2 = Boolean2;
+            item.Boolean3 = Boolean3;
+            item.Document1 = Document1;
+            item.Document2 = Document2;
+            item.Document3 = Document3;
+        }
+    }
+}

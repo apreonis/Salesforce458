@@ -1,0 +1,98 @@
+.top-row {
+    height: 3.5rem;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.nav-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.navbar-brand {
+    color: var(--text-color);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.navbar-toggler {
+    width: 3rem;
+    height: 2.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    background: var(--card-bg);
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.28rem;
+    padding: 0;
+    box-shadow: var(--shadow);
+    color: var(--text-color);
+}
+
+    .navbar-toggler:hover {
+        filter: brightness(1.05);
+    }
+
+.navbar-toggler-line {
+    width: 1.25rem;
+    height: 2px;
+    background: currentColor;
+    border-radius: 999px;
+    display: block;
+}
+
+.nav-shell {
+    position: relative;
+    padding: 0.75rem 0;
+}
+
+.nav-popup {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.75rem;
+    width: calc(100% - 1.5rem);
+    max-width: 18rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 1rem;
+    box-shadow: var(--shadow);
+    padding: 0.5rem;
+    z-index: 50;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+    .nav-popup.collapse {
+        display: none;
+    }
+
+.nav-link {
+    color: var(--text-color);
+    border-radius: 0.85rem;
+    margin: 0.15rem 0;
+    padding: 0.75rem 1rem;
+    transition: var(--transition);
+}
+
+    .nav-link:hover,
+    .nav-link.active {
+        background: rgba(76, 110, 245, 0.12);
+        color: var(--text-color);
+    }
+
+.home-link {
+    background: var(--primary-color);
+    color: #fff !important;
+    box-shadow: var(--shadow);
+    font-weight: 600;
+}
+
+    .home-link:hover,
+    .home-link.active {
+        background: var(--primary-color);
+        color: #fff !important;
+        filter: brightness(1.05);
+    }

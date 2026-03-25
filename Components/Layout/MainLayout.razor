@@ -1,0 +1,55 @@
+﻿@inherits LayoutComponentBase
+@inject IStringLocalizer<SharedResource> Loc
+@inject NavigationManager Navigation
+@using Blazored.Toast
+
+<BlazoredToasts />
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+    <main>
+        <div class="top-row px-4">
+            @if (!IsIdentityPage())
+            {
+                <div class="top-actions">
+                    <SearchBox />
+                    <LanguageSelector />
+                    <ThemeToggle />
+                </div>
+                <AuthorizeView>
+                    <Authorized Context="auth">
+                        <a href="/Identity/Account/Manage" class="top-link">@auth.User.Identity?.Name</a>
+                        <a href="/account/logout?returnUrl=/" class="btn btn-link top-link">@Loc["Logout"]</a>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a href="/Identity/Account/Login" class="top-link">@Loc["Login"]</a>
+                        <a href="/Identity/Account/Register" class="top-link">@Loc["Register"]</a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            }
+        </div>
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    private bool IsIdentityPage()
+    {
+        var relativePath = Navigation.ToBaseRelativePath(Navigation.Uri).ToLowerInvariant();
+        return relativePath.Contains("login")
+            || relativePath.Contains("register")
+            || relativePath.Contains("confirmemail")
+            || relativePath.Contains("forgotpassword")
+            || relativePath.Contains("resetpassword");
+    }
+}

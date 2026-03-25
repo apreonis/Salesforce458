@@ -1,0 +1,306 @@
+﻿@page "/inventory/{Id:guid}"
+
+@using InventoryManagement.Data.Models
+
+@inject IInventoryService InventoryService
+@inject IItemService ItemService
+@inject ICommentService CommentService
+@inject IStatisticsService StatisticsService
+@inject IExportService ExportService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Navigation
+@inject IStringLocalizer<SharedResource> Loc
+@inject IJSRuntime JS
+@inject Blazored.Toast.Services.IToastService ToastService
+@implements IDisposable
+
+<div class="inventory-page">
+    @if (isLoading)
+    {
+        <div class="text-center">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (inventory != null && settingsEditContext != null)
+    {
+        <h1>@inventory.Title</h1>
+
+        <TabControl>
+            <TabPage Title="@Loc["Items"]">
+                <div class="btn-group mb-2">
+                    <button type="button" class="btn btn-secondary" @onclick="ExportCsv">CSV</button>
+                    <button type="button" class="btn btn-secondary" @onclick="ExportExcel">Excel</button>
+                </div>
+                <ItemsTable Inventory="@inventory" Items="@items" CanEdit="@canEdit" />
+            </TabPage>
+
+            <TabPage Title="@Loc["Discussion"]">
+                <Comments InventoryId="@inventory.Id" />
+            </TabPage>
+
+            @if (isOwnerOrAdmin)
+            {
+                <TabPage Title="@Loc["Settings"]">
+                    <EditForm EditContext="@settingsEditContext" OnValidSubmit="SaveSettings">
+                        <div class="mb-3">
+                            <label class="form-label">@Loc["Title"]</label>
+                            <InputText class="form-control" @bind-Value="inventory.Title" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">@Loc["Description"]</label>
+                            <InputTextArea class="form-control" @bind-Value="inventory.Description" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">@Loc["Category"]</label>
+                            <InputSelect class="form-select" @bind-Value="inventory.Category">
+                                <option value="Equipment">@Loc["Equipment"]</option>
+                                <option value="Furniture">@Loc["Furniture"]</option>
+                                <option value="Book">@Loc["Book"]</option>
+                                <option value="Other">@Loc["Other"]</option>
+                            </InputSelect>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">@Loc["Image"]</label>
+                            <ImageUpload Value="@inventory.ImageUrl" ValueChanged="OnImageChanged" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">@Loc["Tags"]</label>
+                            <TagSelector Tags="@inventory.Tags" TagsChanged="OnTagsChanged" />
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">@Loc["Save"]</button>
+                            <button type="button" class="btn btn-danger" @onclick="DeleteInventory">@Loc["Delete"]</button>
+                        </div>
+                    </EditForm>
+                </TabPage>
+
+                <TabPage Title="@Loc["Custom ID"]">
+                    <CustomIdEditor Format="@inventory.CustomIdFormat" FormatChanged="OnCustomIdFormatChanged" SaveFormat="SaveFormat" InventoryId="@inventory.Id" />
+                </TabPage>
+
+                <TabPage Title="@Loc["Fields"]">
+                    <CustomFieldsEditor InventoryId="@inventory.Id" Fields="@inventory.CustomFieldDefinitions" OnChanged="LoadInventory" />
+                </TabPage>
+
+                <TabPage Title="@Loc["Access"]">
+                    <AccessManager InventoryId="@inventory.Id" IsPublic="@inventory.IsPublic" AccessList="@inventory.AccessList" OnChange="LoadInventory" />
+                </TabPage>
+            }
+
+            <TabPage Title="@Loc["Statistics"]">
+                <Statistics InventoryId="@inventory.Id" />
+            </TabPage>
+        </TabControl>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private Inventory? inventory;
+    private List<Item> items = new();
+    private EditContext? settingsEditContext;
+    private bool isOwnerOrAdmin;
+    private bool canEdit;
+    private bool hasChanges;
+    private bool isLoading = true;
+    private Timer? autoSaveTimer;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        await LoadInventory();
+        isLoading = false;
+    }
+
+    protected override void OnInitialized()
+    {
+        autoSaveTimer = new Timer(AutoSave, null, TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(8));
+    }
+
+    private async Task LoadInventory()
+    {
+        var loadedInventory = await InventoryService.GetInventoryAsync(Id);
+        if (loadedInventory == null)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        if (settingsEditContext != null)
+        {
+            settingsEditContext.OnFieldChanged -= HandleFieldChanged;
+        }
+
+        inventory = loadedInventory;
+        settingsEditContext = new EditContext(inventory);
+        settingsEditContext.OnFieldChanged += HandleFieldChanged;
+        hasChanges = false;
+
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var currentUser = await UserManager.GetUserAsync(authState.User);
+        var userId = currentUser?.Id;
+
+        isOwnerOrAdmin = authState.User.Identity?.IsAuthenticated == true &&
+                         (inventory.OwnerId == userId || (currentUser != null && await UserManager.IsInRoleAsync(currentUser, "Admin")));
+
+        canEdit = userId != null && await InventoryService.UserCanWriteAsync(Id, userId);
+
+        await LoadItems();
+        StateHasChanged();
+    }
+
+    private async Task LoadItems()
+    {
+        items = await ItemService.GetItemsForInventoryAsync(Id);
+    }
+
+    private async Task SaveSettings()
+    {
+        if (inventory == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await InventoryService.UpdateInventoryAsync(inventory, inventory.RowVersion);
+            hasChanges = false;
+            await LoadInventory();
+            ToastService.ShowSuccess("Changes saved");
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            ToastService.ShowWarning("Data was modified by another user. Please reload the page.");
+        }
+    }
+
+    private async Task SaveFormat()
+    {
+        if (inventory == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await InventoryService.UpdateInventoryAsync(inventory, inventory.RowVersion);
+            hasChanges = false;
+            await LoadInventory();
+            ToastService.ShowSuccess("ID format saved");
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            ToastService.ShowWarning("Conflict detected. Please reload the page.");
+        }
+    }
+
+    private async Task DeleteInventory()
+    {
+        if (inventory == null)
+        {
+            return;
+        }
+
+        var confirm = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this inventory?");
+        if (!confirm)
+        {
+            return;
+        }
+
+        await InventoryService.DeleteInventoryAsync(inventory.Id);
+        ToastService.ShowSuccess("Inventory deleted");
+        Navigation.NavigateTo("/");
+    }
+
+    private async Task OnImageChanged(string? url)
+    {
+        if (inventory != null)
+        {
+            inventory.ImageUrl = url ?? string.Empty;
+            hasChanges = true;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTagsChanged(ICollection<Tag> tags)
+    {
+        if (inventory != null)
+        {
+            inventory.Tags = tags;
+            hasChanges = true;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private async Task OnCustomIdFormatChanged(CustomIdFormat format)
+    {
+        if (inventory != null)
+        {
+            inventory.CustomIdFormat = format;
+            hasChanges = true;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private void HandleFieldChanged(object? sender, FieldChangedEventArgs e)
+    {
+        hasChanges = true;
+    }
+
+    private async void AutoSave(object? state)
+    {
+        if (hasChanges && inventory != null)
+        {
+            await InvokeAsync(async () =>
+            {
+                try
+                {
+                    await SaveSettings();
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    ToastService.ShowWarning("Data was modified by another user. Please reload the page.");
+                }
+            });
+        }
+    }
+
+    private async Task ExportCsv()
+    {
+        if (inventory == null)
+        {
+            return;
+        }
+
+        var data = await ExportService.ExportInventoryToCsvAsync(inventory.Id);
+        await JS.InvokeVoidAsync("downloadFile", "inventory.csv", "text/csv", data);
+    }
+
+    private async Task ExportExcel()
+    {
+        if (inventory == null)
+        {
+            return;
+        }
+
+        var data = await ExportService.ExportInventoryToExcelAsync(inventory.Id);
+        await JS.InvokeVoidAsync("downloadFile", "inventory.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data);
+    }
+
+    public void Dispose()
+    {
+        if (settingsEditContext != null)
+        {
+            settingsEditContext.OnFieldChanged -= HandleFieldChanged;
+        }
+
+        autoSaveTimer?.Dispose();
+    }
+}

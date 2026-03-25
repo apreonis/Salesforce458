@@ -1,0 +1,127 @@
+﻿@page "/create-inventory"
+@page "/inventory/create"
+@attribute [Authorize]
+
+@using InventoryManagement.Data.Models
+@using InventoryManagement.Data.Models.CustomId
+@using Microsoft.AspNetCore.Components.Forms
+
+@inject NavigationManager NavigationManager
+@inject IInventoryService InventoryService
+@inject IImageUploadService UploadService
+@inject AuthenticationStateProvider AuthState
+@inject UserManager<ApplicationUser> UserManager
+@inject Microsoft.Extensions.Localization.IStringLocalizer<SharedResource> Loc
+@inject Blazored.Toast.Services.IToastService ToastService
+
+<PageTitle>@Loc["Create Inventory"]</PageTitle>
+
+<h3>@Loc["Create Inventory"]</h3>
+
+<EditForm Model="@newInventory" OnValidSubmit="HandleValidSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label class="form-label">@Loc["Title"]</label>
+        <InputText class="form-control" @bind-Value="newInventory.Title" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">@Loc["Description"]</label>
+        <textarea class="form-control" @bind="newInventory.Description"></textarea>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">@Loc["Category"]</label>
+        <InputSelect class="form-select" @bind-Value="newInventory.Category" TValue="InventoryCategory">
+            @foreach (var cat in Enum.GetValues<InventoryCategory>())
+            {
+                <option value="@cat">@cat</option>
+            }
+        </InputSelect>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">@Loc["Image"]</label>
+        <ImageUpload Value="@newInventory.ImageUrl" ValueChanged="@(url => newInventory.ImageUrl = url)" OnFileRemoved="HandlePendingDelete" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">@Loc["Tags"]</label>
+        <TagSelector Tags="@newInventory.Tags" TagsChanged="@(tags => newInventory.Tags = tags)" />
+    </div>
+
+    <button type="submit" class="btn btn-primary">@Loc["Save"]</button>
+</EditForm>
+
+@code {
+    private Inventory newInventory = new()
+    {
+        Tags = new List<Tag>(),
+        CustomIdFormat = new CustomIdFormat()
+    };
+
+    private string? pendingImageToDelete;
+
+    protected override void OnInitialized()
+    {
+        newInventory.Id = Guid.Empty;
+    }
+
+    private Task HandlePendingDelete(string? url)
+    {
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            pendingImageToDelete = url;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        try
+        {
+            var authState = await AuthState.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated != true)
+            {
+                ToastService.ShowWarning("You must be logged in");
+                NavigationManager.NavigateTo("/Identity/Account/Login");
+                return;
+            }
+
+            var currentUser = await UserManager.GetUserAsync(authState.User);
+            if (currentUser == null)
+            {
+                ToastService.ShowWarning("You must be logged in");
+                NavigationManager.NavigateTo("/Identity/Account/Login");
+                return;
+            }
+
+            newInventory.OwnerId = currentUser.Id;
+
+            var created = await InventoryService.CreateInventoryAsync(newInventory, currentUser.Id);
+
+            if (!string.IsNullOrWhiteSpace(pendingImageToDelete))
+            {
+                try
+                {
+                    await UploadService.DeleteAsync(pendingImageToDelete);
+                }
+                catch
+                {
+                }
+
+                pendingImageToDelete = null;
+            }
+
+            ToastService.ShowSuccess("Inventory created");
+            NavigationManager.NavigateTo($"/inventory/{created.Id}");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError(ex.Message);
+        }
+    }
+}
